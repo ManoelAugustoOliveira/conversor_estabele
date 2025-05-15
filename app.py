@@ -3,7 +3,7 @@ import pandas as pd
 import zipfile
 import io
 
-# Lista de colunas padrão (para opção de aplicar nomes)
+# Lista de colunas padrão (para aplicar nomes se necessário)
 COLUNAS_ESTABELE = [
     'CNPJ_BASICO', 'CNPJ_ORDEM', 'CNPJ_DV', 'IDENTIFICADOR_MATRIZ_FILIAL',
     'NOME_FANTASIA', 'SITUACAO_CADASTRAL', 'DATA_SITUACAO_CADASTRAL',
@@ -14,27 +14,28 @@ COLUNAS_ESTABELE = [
     'FAX', 'EMAIL', 'SITUACAO_ESPECIAL', 'DATA_SITUACAO_ESPECIAL'
 ]
 
-st.title("Conversor de CSV para UTF-8 (Streamlit Cloud-friendly)")
+st.title("Conversor de Arquivo .ESTABELE para CSV UTF-8")
 
-uploaded_file = st.file_uploader("Envie um arquivo .zip contendo o CSV", type=["zip"])
+uploaded_file = st.file_uploader("Envie um arquivo .zip contendo o arquivo .ESTABELE", type=["zip"])
 
-add_header = st.checkbox("O CSV não tem cabeçalho (inserir nomes de coluna automaticamente)", value=False)
+add_header = st.checkbox("O arquivo não tem cabeçalho (inserir nomes de colunas manualmente)", value=True)
 
 if uploaded_file is not None:
     with st.spinner("Processando... isso pode levar alguns minutos."):
 
         try:
             with zipfile.ZipFile(uploaded_file) as z:
-                csv_names = [name for name in z.namelist() if name.lower().endswith(".csv")]
+                # Procura arquivos .ESTABELE (ou .csv, opcionalmente)
+                arquivos_validos = [name for name in z.namelist() if name.lower().endswith((".estabele", ".csv"))]
 
-                if not csv_names:
-                    st.error("O arquivo ZIP não contém nenhum CSV.")
+                if not arquivos_validos:
+                    st.error("O arquivo ZIP não contém arquivos com extensão .ESTABELE ou .csv.")
                 else:
-                    csv_name = csv_names[0]
-                    with z.open(csv_name) as csv_file:
-                        # Leitura em blocos
+                    nome_arquivo = arquivos_validos[0]
+                    with z.open(nome_arquivo) as arquivo:
                         reader = pd.read_csv(
-                            csv_file,
+                            arquivo,
+                            sep=";",
                             encoding="ISO-8859-1",
                             chunksize=100_000,
                             dtype=str,
@@ -48,20 +49,20 @@ if uploaded_file is not None:
                         for i, chunk in enumerate(reader):
                             if add_header:
                                 chunk.columns = COLUNAS_ESTABELE
-                            chunk.to_csv(text_buffer, index=False, header=(i == 0))
+                            chunk.to_csv(text_buffer, index=False, header=(i == 0), sep=";")
 
                         text_buffer.flush()
                         text_buffer.close()
                         csv_bytes = output_buffer.getvalue()
 
-                        st.success(f"Conversão concluída com sucesso! Tamanho final: {len(csv_bytes) / 1e6:.2f} MB")
+                        st.success(f"Conversão finalizada! Tamanho do arquivo: {len(csv_bytes) / 1e6:.2f} MB")
 
                         st.download_button(
-                            "📥 Baixar CSV otimizado",
+                            label="📥 Baixar CSV UTF-8",
                             data=csv_bytes,
                             file_name="estabelecimentos_convertido.csv",
                             mime="text/csv"
                         )
 
         except Exception as e:
-            st.error(f"Ocorreu um erro: {str(e)}")
+            st.error(f"Ocorreu um erro ao processar: {str(e)}")
