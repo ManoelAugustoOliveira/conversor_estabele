@@ -3,6 +3,7 @@ import pandas as pd
 import zipfile
 import io
 import time
+import tempfile
 
 COLUNAS_ESTABELE = [
     'CNPJ_BASICO', 'CNPJ_ORDEM', 'CNPJ_DV', 'IDENTIFICADOR_MATRIZ_FILIAL',
@@ -25,8 +26,15 @@ if "csv_bytes" not in st.session_state:
 
 if uploaded_file is not None and st.session_state.csv_bytes is None:
     with st.spinner("Processando... isso pode levar alguns minutos."):
+
         try:
-            with zipfile.ZipFile(uploaded_file) as z:
+            # Salva o ZIP em arquivo temporário
+            with tempfile.NamedTemporaryFile(delete=False, suffix=".zip") as temp_zip:
+                temp_zip.write(uploaded_file.read())
+                temp_zip.flush()
+
+            # Abre o arquivo ZIP a partir do arquivo temporário
+            with zipfile.ZipFile(temp_zip.name, 'r') as z:
                 arquivos_validos = [name for name in z.namelist() if name.lower().endswith((".estabele", ".csv"))]
 
                 if not arquivos_validos:
@@ -52,8 +60,6 @@ if uploaded_file is not None and st.session_state.csv_bytes is None:
                             status_text = st.empty()
 
                             chunk_times = []
-                            total_chunks_estimate = 0
-
                             for i, chunk in enumerate(reader):
                                 start_time = time.time()
 
@@ -66,19 +72,12 @@ if uploaded_file is not None and st.session_state.csv_bytes is None:
                                 elapsed = time.time() - start_time
                                 chunk_times.append(elapsed)
 
-                                recent_times = chunk_times[-5:]
-                                avg_time = sum(recent_times) / len(recent_times)
+                                avg_time = sum(chunk_times[-5:]) / min(len(chunk_times), 5)
+                                est_time_left = avg_time * 2  # apenas estimativa simbólica
 
-                                if i == 0:
-                                    status_text.info("Processando...")
-
-                                estimated_total_chunks = int((i + 1) * 2)
-                                total_chunks_estimate = max(total_chunks_estimate, estimated_total_chunks)
-                                remaining = max(0, total_chunks_estimate - i - 1)
-                                est_time_left = remaining * avg_time
-
-                                progress_bar.progress(min((i + 1) / total_chunks_estimate, 1.0))
-                                status_text.info(f"Chunk {i + 1}, estimativa de tempo restante: {est_time_left:.1f} segundos")
+                                progresso = (i + 1) / ((i + 1) + 2)  # aproximação simples
+                                progress_bar.progress(min(progresso, 1.0))
+                                status_text.info(f"Chunk {i + 1} processado. Estimativa de tempo restante: {est_time_left:.1f} s")
 
                             st.session_state.csv_bytes = output_buffer.getvalue()
 
