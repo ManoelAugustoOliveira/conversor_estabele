@@ -22,16 +22,16 @@ add_header = st.checkbox("O arquivo não tem cabeçalho (inserir nomes de coluna
 
 if uploaded_file is not None:
     with st.spinner("Processando... isso pode levar alguns minutos."):
-
         try:
             with zipfile.ZipFile(uploaded_file) as z:
-                # Procura arquivos .ESTABELE (ou .csv, opcionalmente)
+                # Busca arquivos .ESTABELE ou .csv no ZIP
                 arquivos_validos = [name for name in z.namelist() if name.lower().endswith((".estabele", ".csv"))]
 
                 if not arquivos_validos:
                     st.error("O arquivo ZIP não contém arquivos com extensão .ESTABELE ou .csv.")
                 else:
                     nome_arquivo = arquivos_validos[0]
+
                     with z.open(nome_arquivo) as arquivo:
                         reader = pd.read_csv(
                             arquivo,
@@ -43,17 +43,16 @@ if uploaded_file is not None:
                             header=None if add_header else "infer"
                         )
 
-                        output_buffer = io.BytesIO()
-                        text_buffer = io.TextIOWrapper(output_buffer, encoding="utf-8", write_through=True)
+                        with io.BytesIO() as output_buffer:
+                            text_buffer = io.TextIOWrapper(output_buffer, encoding="utf-8", write_through=True)
 
-                        for i, chunk in enumerate(reader):
-                            if add_header:
-                                chunk.columns = COLUNAS_ESTABELE
-                            chunk.to_csv(text_buffer, index=False, header=(i == 0), sep=";")
+                            for i, chunk in enumerate(reader):
+                                if add_header:
+                                    chunk.columns = COLUNAS_ESTABELE
+                                chunk.to_csv(text_buffer, index=False, header=(i == 0), sep=";")
 
-                        text_buffer.flush()
-                        text_buffer.close()
-                        csv_bytes = output_buffer.getvalue()
+                            text_buffer.flush()
+                            csv_bytes = output_buffer.getvalue()
 
                         st.success(f"Conversão finalizada! Tamanho do arquivo: {len(csv_bytes) / 1e6:.2f} MB")
 
