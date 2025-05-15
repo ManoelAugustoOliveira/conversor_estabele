@@ -1,7 +1,9 @@
 import streamlit as st
 import pandas as pd
+import zipfile
 import io
 
+# Lista de colunas padrão (para opção de aplicar nomes)
 COLUNAS_ESTABELE = [
     'CNPJ_BASICO', 'CNPJ_ORDEM', 'CNPJ_DV', 'IDENTIFICADOR_MATRIZ_FILIAL',
     'NOME_FANTASIA', 'SITUACAO_CADASTRAL', 'DATA_SITUACAO_CADASTRAL',
@@ -12,39 +14,54 @@ COLUNAS_ESTABELE = [
     'FAX', 'EMAIL', 'SITUACAO_ESPECIAL', 'DATA_SITUACAO_ESPECIAL'
 ]
 
-st.title("Conversor de Arquivo Estabelecimentos CNPJ")
+st.title("Conversor de CSV para UTF-8 (Streamlit Cloud-friendly)")
 
-uploaded_file = st.file_uploader("Selecione o arquivo bruto (.ESTABELE)", type=["ESTABELE", "txt", "csv"])
+uploaded_file = st.file_uploader("Envie um arquivo .zip contendo o CSV", type=["zip"])
 
-if uploaded_file:
-    st.info("Lendo arquivo... isso pode levar alguns minutos para arquivos grandes.")
+add_header = st.checkbox("O CSV não tem cabeçalho (inserir nomes de coluna automaticamente)", value=False)
 
-    try:
-        # Leitura em blocos para eficiência
-        chunk_size = 500_000
-        reader = pd.read_csv(
-            uploaded_file,
-            sep=';',
-            names=COLUNAS_ESTABELE,
-            header=None,
-            encoding='latin1',
-            dtype=str,
-            chunksize=chunk_size,
-        )
+if uploaded_file is not None:
+    with st.spinner("Processando... isso pode levar alguns minutos."):
 
-        buffer = io.StringIO()
-        for i, chunk in enumerate(reader):
-            chunk.to_csv(buffer, index=False, encoding='utf-8', header=(i == 0))  # Só escreve o header na primeira vez
+        try:
+            with zipfile.ZipFile(uploaded_file) as z:
+                csv_names = [name for name in z.namelist() if name.lower().endswith(".csv")]
 
-        buffer.seek(0)
-        st.success("Conversão concluída!")
+                if not csv_names:
+                    st.error("O arquivo ZIP não contém nenhum CSV.")
+                else:
+                    csv_name = csv_names[0]
+                    with z.open(csv_name) as csv_file:
+                        # Leitura em blocos
+                        reader = pd.read_csv(
+                            csv_file,
+                            encoding="ISO-8859-1",
+                            chunksize=100_000,
+                            dtype=str,
+                            na_filter=False,
+                            header=None if add_header else "infer"
+                        )
 
-        st.download_button(
-            label="📥 Baixar CSV otimizado",
-            data=buffer.getvalue(),
-            file_name="estabelecimentos_convertido.csv",
-            mime="text/csv"
-        )
+                        output_buffer = io.BytesIO()
+                        text_buffer = io.TextIOWrapper(output_buffer, encoding="utf-8", write_through=True)
 
-    except Exception as e:
-        st.error(f"Erro ao processar o arquivo: {str(e)}")
+                        for i, chunk in enumerate(reader):
+                            if add_header:
+                                chunk.columns = COLUNAS_ESTABELE
+                            chunk.to_csv(text_buffer, index=False, header=(i == 0))
+
+                        text_buffer.flush()
+                        text_buffer.close()
+                        csv_bytes = output_buffer.getvalue()
+
+                        st.success(f"Conversão concluída com sucesso! Tamanho final: {len(csv_bytes) / 1e6:.2f} MB")
+
+                        st.download_button(
+                            "📥 Baixar CSV otimizado",
+                            data=csv_bytes,
+                            file_name="estabelecimentos_convertido.csv",
+                            mime="text/csv"
+                        )
+
+        except Exception as e:
+            st.error(f"Ocorreu um erro: {str(e)}")
